@@ -3,6 +3,7 @@ from os import listdir
 from os.path import join
 from scipy.io import wavfile
 import numpy as np
+import matplotlib.pyplot as plt
 
 def load_data(datapath):
     train_data_folder = join(datapath, 'train')
@@ -74,3 +75,10 @@ def config_figures():
 
 def to_db(x):
     return 10*np.log10(np.abs(x))
+
+def visualize_tf(tf_frames, sampling_frequency, figsize=(9, 6), cmap="coolwarm"):
+    fig = plt.figure(figsize=figsize); ax = fig.add_subplot(111)
+    ax.imshow(to_db(tf_frames), origin='lower', aspect='auto', cmap=cmap,
+          extent=[0, tf_frames.shape[1], 0, sampling_frequency/2 * 1e-3])
+    ax.set_xlabel("Time frames"); ax.set_ylabel("Frequency [KHz]");    
+    return ax

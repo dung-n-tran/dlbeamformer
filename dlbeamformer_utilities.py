@@ -306,6 +306,34 @@ def simulate_multichannel_tf(array_geometry, signal, theta, phi, sampling_freque
                                 * tf_frames.reshape(tf_frames.shape[0], 1, tf_frames.shape[1])
     return tf_frames_multichannel
 
+def simulate_multichannel_tf_mixtures(array_geometry, source,
+        interferences, sampling_frequency, stft_params):
+    source_signal = source["signal"]
+    elevation_s = source["elevation"]
+    azimuth_s = source["azimuth"]
+    source_stft_multichannel = simulate_multichannel_tf(
+        array_geometry, source_signal, elevation_s, azimuth_s,
+        sampling_frequency, stft_params)
+#     received_stft_multichannel = np.zeros(source_stft_multichannel.shape, dtype=np.complex64)
+
+    received_stft_multichannel = source_stft_multichannel.copy()
+    
+    interference_stfts_multichannel_list = []
+    for i_interference in range(len(interferences)):
+        interference_signal = interferences[i_interference]["signal"]
+        interference_elevation = interferences[i_interference]["elevation"]
+        interference_azimuth = interferences[i_interference]["azimuth"]
+        interference_stft_multichannel = simulate_multichannel_tf(array_geometry, interference_signal, 
+                interference_elevation, interference_azimuth,
+                sampling_frequency, stft_params)
+        interference_stfts_multichannel_list.append(interference_stft_multichannel)        
+    
+    interference_stfts_multichannel = sum(interference_stfts_multichannel_list)
+    received_stft_multichannel += interference_stfts_multichannel
+    
+    return received_stft_multichannel, source_stft_multichannel, interference_stfts_multichannel
+
+
 def simulate_multichannel_tf_circular(array_geometry, signal, azimuth, sampling_frequency, stft_params):
     n_mics = len(array_geometry[0])
     n_samples_per_frame = stft_params["n_samples_per_frame"]
