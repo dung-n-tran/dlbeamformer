@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.signal import stft
 import matplotlib.pyplot as plt
+from utilities import to_db
 SOUND_SPEED = 340 # [m/s]
 # Steering vectors
 def compute_steering_vectors_single_frequency(array_geometry, frequency, elevation_grid, azimuth_grid):
@@ -59,6 +60,27 @@ def visualize_beampattern_1d(beampattern, scanning_azimuth_grid, frequency_bins,
     if title is not None:
         ax.set_title(title)
     return fig, ax
+
+def visualize_beampattern_1d_average(beampattern, scanning_azimuth_grid, frequency_range=None, 
+    source_azimuths=None, title=None, figsize=(9, 6)):
+    if frequency_range is None:
+        ds_ave_beampattern = np.mean(np.abs(beampattern), axis=0)
+    else:
+        ds_ave_beampattern = np.mean(np.abs(beampattern[frequency_range[0]:frequency_range[1], :]), axis=0)
+
+    ds_ave_beampattern_normalized = ds_ave_beampattern / np.max(ds_ave_beampattern)
+    ds_ave_beampattern_normalized_db = 2 * to_db(ds_ave_beampattern_normalized)
+    fig = plt.figure(figsize=(9, 6)); ax = fig.add_subplot(111)
+    ax.plot(scanning_azimuth_grid, ds_ave_beampattern_normalized_db, label="Beam pattern");
+    if source_azimuths is not None:
+        for i_source in range(len(source_azimuths)):
+            ax.axvline(x=source_azimuths[i_source], linestyle="--", label="Source angle");
+    ax.set_xlim(scanning_azimuth_grid[0], scanning_azimuth_grid[-1]); ax.set_ylim(-60, 1)
+    ax.set_xlabel(r"Azimuth [degree]"); ax.set_ylabel("Beam pattern [dB]");
+    if title is not None:
+        ax.set_title(title)
+    ax.legend();
+    return ax
 
 def visualize_beampattern_2d(beampattern, scanning_azimuth_grid, signal_max_frequency, title=None, figsize=(9, 6)):
     fig = plt.figure(figsize=figsize); ax = fig.add_subplot(111)
