@@ -76,6 +76,9 @@ def config_figures():
 def to_db(x):
     return 10*np.log10(np.abs(x))
 
+def from_db(x):
+    return 10**(x/10)
+
 def visualize_tf(tf_frames, sampling_frequency, figsize=(9, 6), cmap="coolwarm"):
     fig = plt.figure(figsize=figsize); ax = fig.add_subplot(111)
     ax.imshow(to_db(tf_frames), origin='lower', aspect='auto', cmap=cmap,

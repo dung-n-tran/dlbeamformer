@@ -3,6 +3,7 @@ from scipy.signal import stft
 import matplotlib.pyplot as plt
 from utilities import to_db
 SOUND_SPEED = 340 # [m/s]
+from scipy.signal import stft, istft
 # Steering vectors
 def compute_steering_vectors_single_frequency(array_geometry, frequency, elevation_grid, azimuth_grid):
     # wave number
@@ -94,6 +95,19 @@ def visualize_beampattern_2d(beampattern, scanning_azimuth_grid, signal_max_freq
         ax.set_title(title)
     return fig, ax
 
+def compute_tf_beamformer_output(beamformer, tf_frames_multichannel, sampling_frequency, stft_params):
+    n_samples_per_frame = stft_params["n_samples_per_frame"]
+    n_fft_bins = stft_params["n_fft_bins"]
+    hop_size = stft_params["hop_size"]
+    stft_window = stft_params["window"]
+    tf_out = np.zeros((n_fft_bins, tf_frames_multichannel.shape[2]), dtype=np.complex64)
+    for i_fft_bin in range(n_fft_bins):
+        tf_out[i_fft_bin] = beamformer[i_fft_bin].transpose().conjugate().dot(tf_frames_multichannel[i_fft_bin])
+    t, out = istft(tf_out, fs=sampling_frequency, window=stft_window,
+                             nperseg=n_samples_per_frame, noverlap=n_samples_per_frame-hop_size,
+                             nfft=n_samples_per_frame, boundary=True)
+    return out, tf_out, t
+
 def compute_sinr_2(source_tf_multichannel, interference_tf_multichannel):
         source_power = 0
         interference_power = 0
@@ -101,7 +115,9 @@ def compute_sinr_2(source_tf_multichannel, interference_tf_multichannel):
         for i_f in range(n_fft_bins):
             source_power += np.trace(source_stft_multichannel[i_f].dot(source_stft_multichannel[i_f].transpose().conjugate()))
             interference_power += np.trace(interference_stft_multichannel[i_f].dot(interference_stft_multichannel[i_f].transpose().conjugate()))
-        return 10*np.log10(np.abs(source_power/interference_power))
+        psnr = source_power/interference_power
+        psnr_db = to_db(psnr)
+        return psnr_db, psnr
     
 def compute_sinr(source_tf_multichannel, interference_tf_multichannel, weights=None):
     n_fft_bins, n_mics, _ = source_tf_multichannel.shape
@@ -121,7 +137,9 @@ def compute_sinr(source_tf_multichannel, interference_tf_multichannel, weights=N
         for i_f in range(n_fft_bins):
             source_power += np.trace(source_tf_multichannel[i_f].dot(source_tf_multichannel[i_f].transpose().conjugate()))
             interference_power += np.trace(interference_tf_multichannel[i_f].dot(interference_tf_multichannel[i_f].transpose().conjugate()))
-    return 10*np.log10(np.abs(source_power/interference_power))
+    psnr = source_power/interference_power
+    psnr_db = to_db(psnr)
+    return psnr_db, psnr
     
 def compute_mvdr_tf_beamformers(source_steering_vectors, tf_frames_multichannel, diagonal_loading_param=1):
     n_fft_bins, n_mics = source_steering_vectors.shape
@@ -375,7 +393,7 @@ def compute_steering_vectors_circular(array_geometry, sampling_frequency, stft_p
 
 def compute_minimum_variance_tf_beamformers(source_steering_vectors, tf_frames_multichannel=None, diagonal_loading_param=1):
     n_fft_bins, n_mics = source_steering_vectors.shape
-    mvdr_tf_beamformers = np.zeros((n_fft_bins, n_mics), dtype=np.complex64)
+    mv_tf_beamformers = np.zeros((n_fft_bins, n_mics), dtype=np.complex64)
     for i_fft_bin in range(n_fft_bins):
         R = diagonal_loading_param*np.identity(n_mics, dtype=np.complex64)
         if tf_frames_multichannel is not None:
@@ -384,5 +402,18 @@ def compute_minimum_variance_tf_beamformers(source_steering_vectors, tf_frames_m
         invR = np.linalg.inv(R)
         normalization_factor = source_steering_vectors[i_fft_bin].transpose().conjugate().dot(
             invR).dot(source_steering_vectors[i_fft_bin])
-        mvdr_tf_beamformers[i_fft_bin] = invR.dot(source_steering_vectors[i_fft_bin]) / normalization_factor
-    return mvdr_tf_beamformers
+        mv_tf_beamformers[i_fft_bin] = invR.dot(source_steering_vectors[i_fft_bin]) / normalization_factor
+    return mv_tf_beamformers
+
+def compute_tf_beamformers(source_steering_vectors, beamformer_name="delaysum", 
+    tf_frames_multichannel=None, diagonal_loading_param=1):
+    n_fft_bins, n_mics = source_steering_vectors.shape
+    if beamformer_name.lower() == "delaysum":
+        tf_beamformer = compute_minimum_variance_tf_beamformers(
+            source_steering_vectors, diagonal_loading_param=diagonal_loading_param)
+    elif beamformer_name.lower() in ["mvdr", "mpdr"]:
+        tf_beamformer = compute_minimum_variance_tf_beamformers(
+            source_steering_vectors, tf_frames_multichannel, 
+            diagonal_loading_param=diagonal_loading_param)
+        
+    return tf_beamformer
