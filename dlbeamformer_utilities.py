@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 from utilities import to_db
 SOUND_SPEED = 340 # [m/s]
 from scipy.signal import stft, istft
+from tqdm import tqdm
+import pickle
+
 # Steering vectors
 def compute_steering_vectors_single_frequency(array_geometry, frequency, elevation_grid, azimuth_grid):
     # wave number
@@ -42,7 +45,7 @@ def compute_tf_beampattern(beamformers, scanning_steering_vectors):
             for i_azimuth in range(n_azimuths):
                 v = scanning_steering_vectors[i_fft_bin][i_elevation][i_azimuth]
                 beampattern[i_fft_bin][i_elevation][i_azimuth] = \
-                    beamformers[i_fft_bin, 0, 0, :].transpose().conjugate().dot(v)
+                    beamformers[i_fft_bin, :].transpose().conjugate().dot(v)
     return beampattern
 
 def visualize_beampattern_1d(beampattern, scanning_azimuth_grid, frequency_bins, 
@@ -256,7 +259,7 @@ the frequency-adaptive broadband (FAB) beamformer", bioRxiv
         Equation (12) in https://www.biorxiv.org/content/biorxiv/early/2018/12/20/502690.full.pdf
         """
         normalization_matrix = (1 - 1e-3)*normalization_matrix \
-                    + 1e-3*np.trace(normalization_matrix)/steering_vectors.shape[1] * 10*np.identity(steering_vectors.shape[1])
+                    + 1e-3*np.trace(normalization_matrix)/steering_vectors.shape[1] * 1*np.identity(steering_vectors.shape[1])
         inverse_normalization_matrix = np.linalg.inv(normalization_matrix)
         
         constraint_vector = null_constraint_threshold*np.ones(steering_vectors.shape[1])
@@ -417,3 +420,63 @@ def compute_tf_beamformers(source_steering_vectors, beamformer_name="delaysum",
             diagonal_loading_param=diagonal_loading_param)
         
     return tf_beamformer
+
+def prepare_multichannel_covariance_data(array_geometry, train_data, n_interferences, 
+                                         training_angles, azimuth_step, 
+                                         n_samples_each_config, sampling_frequency, 
+                                         stft_params, filepath, random_seed=0, SAVE=False):
+    if SAVE == True:
+        import itertools
+        training_elevations = training_angles["elevation"]
+        training_azimuths = training_angles["azimuth"]
+        n_interference_list = list(np.arange(n_interferences) + 1)
+        training_interference_covariance = []
+        n_mics = len(array_geometry[0])
+        np.random.seed(0)
+        for i_n_interference in tqdm(range(len(n_interference_list)), desc="Interference number"):
+            n_interferences = n_interference_list[i_n_interference]
+            interferences_params = []
+            for i_interference in range(n_interferences):
+                interference_params = list(itertools.product(*[training_elevations, training_azimuths]))
+                interferences_params.append(interference_params)
+            interferences_param_sets = list(itertools.product(*interferences_params))
+
+            for i_param_set in tqdm(range(len(interferences_param_sets)), desc="Parameter set"):    
+                param_set = interferences_param_sets[i_param_set]
+                training_param_dict = {
+                    "elevation": np.asarray(param_set).transpose()[0],
+                    "azimuth": np.asarray(param_set).transpose()[1]
+                    }
+
+                # MORE TRAINING DATA IS BETTER            
+                tf_sample_covariance_batch = np.zeros((n_samples_each_config, stft_params["n_fft_bins"], n_mics, n_mics), dtype=np.complex64)
+                for i_training_sample in range(n_samples_each_config):
+                    interference_signals = []
+                    for i_interference in range(len(param_set)):
+                        interference_signal = train_data[np.random.choice(len(train_data))]
+                        interference_signals.append(interference_signal)                
+                    interference_n_samples = min([len(signal) for signal in interference_signals])
+
+                    interference_tf_multichannel_list = []
+                    for i_interference in range(len(param_set)):
+                        interference_signals[i_interference] = (interference_signals[i_interference])[0:interference_n_samples]
+                        interference_elevation, interference_azimuth = param_set[i_interference]
+                        interference_azimuth += 1*np.random.uniform()
+                        interference_tf_multichannel = simulate_multichannel_tf(array_geometry, interference_signal, 
+                                np.array([interference_elevation]), np.array([interference_azimuth]),
+                                sampling_frequency, stft_params)
+                        interference_tf_multichannel_list.append(interference_tf_multichannel)
+
+                    received = sum(interference_tf_multichannel_list)
+                    received_sample_covariance = np.zeros((stft_params["n_fft_bins"], n_mics, n_mics), dtype=np.complex64)
+                    n_fft_bins, _, n_received_samples = received.shape
+                    for i_fft_bin in range(n_fft_bins):
+                        received_sample_covariance[i_fft_bin] = 1/n_received_samples * received[i_fft_bin].dot(received[i_fft_bin].transpose().conjugate())
+                    tf_sample_covariance_batch[i_training_sample] = received_sample_covariance
+                training_interference_covariance.append((tf_sample_covariance_batch, training_param_dict))
+        with open(filepath, 'wb') as f:
+            pickle.dump(training_interference_covariance, f, pickle.HIGHEST_PROTOCOL)
+    else:
+        with open(filepath, 'rb') as f:
+            training_interference_covariance = pickle.load(f)
+    return training_interference_covariance

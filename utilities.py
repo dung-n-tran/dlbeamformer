@@ -4,6 +4,7 @@ from os.path import join
 from scipy.io import wavfile
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 def load_data(datapath):
     train_data_folder = join(datapath, 'train')
