@@ -5,6 +5,8 @@ from scipy.io import wavfile
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from IPython.display import Audio, display
+from scipy.signal import stft, istft
 
 def load_data(datapath):
     train_data_folder = join(datapath, 'train')
@@ -80,9 +82,22 @@ def to_db(x):
 def from_db(x):
     return 10**(x/10)
 
+def compute_power(x):
+    return np.sum( np.multiply( np.abs(x), np.abs(x) ) )
+
 def visualize_tf(tf_frames, sampling_frequency, figsize=(9, 6), cmap="coolwarm"):
     fig = plt.figure(figsize=figsize); ax = fig.add_subplot(111)
     ax.imshow(to_db(tf_frames), origin='lower', aspect='auto', cmap=cmap,
           extent=[0, tf_frames.shape[1], 0, sampling_frequency/2 * 1e-3])
     ax.set_xlabel("Time frames"); ax.set_ylabel("Frequency [KHz]");    
     return ax
+
+def play_tf_frames(tf_frames, sampling_frequency, stft_params):
+    stft_window = stft_params["window"]
+    n_samples_per_frame = stft_params["n_samples_per_frame"]
+    hop_size = stft_params["hop_size"]
+    t, ss = istft(tf_frames, fs=sampling_frequency, 
+        window=stft_window, nperseg=n_samples_per_frame, 
+        noverlap=n_samples_per_frame-hop_size,
+        nfft=n_samples_per_frame, boundary=True)
+    display(Audio(ss, rate=sampling_frequency, autoplay=True))

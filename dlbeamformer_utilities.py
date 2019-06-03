@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.signal import stft
 import matplotlib.pyplot as plt
-from utilities import to_db
+from utilities import to_db, compute_power
 SOUND_SPEED = 340 # [m/s]
 from scipy.signal import stft, istft
 from tqdm import tqdm
@@ -109,8 +109,25 @@ def compute_tf_beamformer_output(beamformer, tf_frames_multichannel, sampling_fr
     t, out = istft(tf_out, fs=sampling_frequency, window=stft_window,
                              nperseg=n_samples_per_frame, noverlap=n_samples_per_frame-hop_size,
                              nfft=n_samples_per_frame, boundary=True)
-    return out, tf_out, t
+    return tf_out, out, t
 
+def compute_tf_beamformer_output_frame_by_frame(beamformer, tf_frames_multichannel,
+        sampling_frequency, stft_params):
+    n_frames = tf_frames_multichannel.shape[2]
+    n_samples_per_frame = stft_params["n_samples_per_frame"]
+    n_fft_bins = stft_params["n_fft_bins"]
+    hop_size = stft_params["hop_size"]
+    stft_window = stft_params["window"]
+    tf_out = np.zeros((n_fft_bins, n_frames), dtype=np.complex64)
+    for i_frame in range(n_frames):
+        tf_frame = tf_frames_multichannel[:, :, i_frame]
+        tf_out[:, i_frame] = np.sum(np.multiply(beamformer.conjugate(), tf_frame), axis=1)
+    t, out = istft(tf_out, fs=sampling_frequency, window=stft_window,
+                             nperseg=n_samples_per_frame, noverlap=n_samples_per_frame-hop_size,
+                             nfft=n_samples_per_frame, boundary=True)
+    return tf_out, out, t
+                
+                
 def compute_sinr_2(source_tf_multichannel, interference_tf_multichannel):
         source_power = 0
         interference_power = 0
@@ -137,9 +154,12 @@ def compute_sinr(source_tf_multichannel, interference_tf_multichannel, weights=N
                 interference_tf_multichannel[i_f].transpose().conjugate())).dot(
                 weights[i_f])
     else:
-        for i_f in range(n_fft_bins):
-            source_power += np.trace(source_tf_multichannel[i_f].dot(source_tf_multichannel[i_f].transpose().conjugate()))
-            interference_power += np.trace(interference_tf_multichannel[i_f].dot(interference_tf_multichannel[i_f].transpose().conjugate()))
+#         for i_f in range(n_fft_bins):
+#             source_power += np.trace(source_tf_multichannel[i_f].dot(source_tf_multichannel[i_f].transpose().conjugate()))
+#             interference_power += np.trace(interference_tf_multichannel[i_f].dot(interference_tf_multichannel[i_f].transpose().conjugate()))
+        source_power = np.sum(np.multiply(np.abs(source_tf_multichannel), np.abs(source_tf_multichannel)))
+        interference_power = np.sum(np.multiply(np.abs(interference_tf_multichannel), np.abs(interference_tf_multichannel)))
+                               
     psnr = source_power/interference_power
     psnr_db = to_db(psnr)
     return psnr_db, psnr
@@ -312,7 +332,7 @@ the frequency-adaptive broadband (FAB) beamformer", bioRxiv
         
     return nc_tf_beamformers
 
-def simulate_multichannel_tf(array_geometry, signal, theta, phi, sampling_frequency, stft_params):
+def simulate_multichannel_tf(array_geometry, signal, theta, phi, sampling_frequency, stft_params, noise_power=0):
     n_mics = len(array_geometry[0])
     n_samples_per_frame = stft_params["n_samples_per_frame"]
     n_fft_bins = stft_params["n_fft_bins"]
@@ -325,10 +345,32 @@ def simulate_multichannel_tf(array_geometry, signal, theta, phi, sampling_freque
     tf_frames = tf_frames[:-1, 1:-1]
     tf_frames_multichannel = steering_vector.reshape(n_fft_bins, n_mics, 1)\
                                 * tf_frames.reshape(tf_frames.shape[0], 1, tf_frames.shape[1])
+    for i_channel in range(n_mics):
+        noise = np.sqrt(noise_power) * np.random.randn(*(signal.shape))
+        _, _, noise_stft = stft(noise.reshape(-1), fs=sampling_frequency, window=stft_window,
+                             nperseg=n_samples_per_frame, noverlap=n_samples_per_frame-hop_size,
+                             nfft=n_samples_per_frame, padded=True)
+        noise_stft = noise_stft[:-1, 1:-1]
+        tf_frames_multichannel[:, i_channel, :] += noise_stft.copy()
     return tf_frames_multichannel
 
+def compute_stft(signal, sampling_frequency, stft_params):
+    n_samples_per_frame = stft_params["n_samples_per_frame"]
+    n_fft_bins = stft_params["n_fft_bins"]
+    hop_size = stft_params["hop_size"]
+    stft_window = stft_params["window"]
+    _, _, tf_frames = stft(signal.reshape(-1), fs=sampling_frequency, window=stft_window,
+                             nperseg=n_samples_per_frame, noverlap=n_samples_per_frame-hop_size,
+                             nfft=n_samples_per_frame, padded=True)
+    return tf_frames
+
 def simulate_multichannel_tf_mixtures(array_geometry, source,
-        interferences, sampling_frequency, stft_params):
+        interferences, sampling_frequency, stft_params, input_inr=10, input_sinr=1):
+    n_mics = len(array_geometry[0])
+    n_samples_per_frame = stft_params["n_samples_per_frame"]
+    n_fft_bins = stft_params["n_fft_bins"]
+    hop_size = stft_params["hop_size"]
+    stft_window = stft_params["window"]
     source_signal = source["signal"]
     elevation_s = source["elevation"]
     azimuth_s = source["azimuth"]
@@ -336,7 +378,8 @@ def simulate_multichannel_tf_mixtures(array_geometry, source,
         array_geometry, source_signal, elevation_s, azimuth_s,
         sampling_frequency, stft_params)
 #     received_stft_multichannel = np.zeros(source_stft_multichannel.shape, dtype=np.complex64)
-
+    source_power = compute_power( source_stft_multichannel )
+    
     received_stft_multichannel = source_stft_multichannel.copy()
     
     interference_stfts_multichannel_list = []
@@ -347,12 +390,29 @@ def simulate_multichannel_tf_mixtures(array_geometry, source,
         interference_stft_multichannel = simulate_multichannel_tf(array_geometry, interference_signal, 
                 interference_elevation, interference_azimuth,
                 sampling_frequency, stft_params)
-        interference_stfts_multichannel_list.append(interference_stft_multichannel)        
-    
+        interference_stfts_multichannel_list.append(interference_stft_multichannel)
     interference_stfts_multichannel = sum(interference_stfts_multichannel_list)
-    received_stft_multichannel += interference_stfts_multichannel
+    interference_power = compute_power(interference_stfts_multichannel)
     
-    return received_stft_multichannel, source_stft_multichannel, interference_stfts_multichannel
+    noise_power =  interference_power / input_inr
+    noise_stft_multichannel = np.zeros(interference_stfts_multichannel.shape, dtype=np.complex64)
+    for i_channel in range(n_mics):
+        noise = np.random.randn(*(interference_signal.shape))
+        _, _, noise_stft = stft(noise.reshape(-1), fs=sampling_frequency, window=stft_window,
+                             nperseg=n_samples_per_frame, noverlap=n_samples_per_frame-hop_size,
+                             nfft=n_samples_per_frame, padded=True)
+        noise_stft = noise_stft[:-1, 1:-1]
+        noise_stft_multichannel[:, i_channel, :] = noise_stft.copy()
+    noise_stft_multichannel = ( np.sqrt(noise_power / compute_power(noise_stft_multichannel)) ) * noise_stft_multichannel
+    
+    normalization_factor = compute_power(interference_stfts_multichannel + noise_stft_multichannel)
+    interference_noise_power = source_power / input_sinr
+    interference_stfts_multichannel = np.sqrt(interference_noise_power / normalization_factor) * interference_stfts_multichannel
+    noise_stft_multichannel = np.sqrt(interference_noise_power / normalization_factor) * noise_stft_multichannel
+    
+    received_stft_multichannel += interference_stfts_multichannel + noise_stft_multichannel
+    
+    return received_stft_multichannel, source_stft_multichannel, interference_stfts_multichannel, noise_stft_multichannel
 
 
 def simulate_multichannel_tf_circular(array_geometry, signal, azimuth, sampling_frequency, stft_params):
@@ -467,7 +527,7 @@ def prepare_multichannel_covariance_data(array_geometry, train_data, n_interfere
                                 sampling_frequency, stft_params)
                         interference_tf_multichannel_list.append(interference_tf_multichannel)
 
-                    received = sum(interference_tf_multichannel_list)
+                    received = sum(interference_tf_multichannel_list) 
                     received_sample_covariance = np.zeros((stft_params["n_fft_bins"], n_mics, n_mics), dtype=np.complex64)
                     n_fft_bins, _, n_received_samples = received.shape
                     for i_fft_bin in range(n_fft_bins):
