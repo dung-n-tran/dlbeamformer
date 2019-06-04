@@ -49,7 +49,8 @@ def main(datapath, n_interferences=1):
     print("Number of interferences:", n_interferences)
     
     azimuth_step = 5
-    n_samples_each_config = len(train_data)
+#     n_samples_each_config = len(train_data)
+    n_samples_each_config = 100
     training_azimuths = list(np.arange(0, 360, azimuth_step))
     training_elevations = np.array([-90])
     training_angles = {

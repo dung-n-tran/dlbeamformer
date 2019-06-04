@@ -468,10 +468,10 @@ def compute_minimum_variance_tf_beamformers(source_steering_vectors, tf_frames_m
         mv_tf_beamformers[i_fft_bin] = invR.dot(source_steering_vectors[i_fft_bin]) / normalization_factor
     return mv_tf_beamformers
 
-def compute_tf_beamformers(source_steering_vectors, beamformer_name="delaysum", 
+def compute_tf_beamformers(source_steering_vectors, beamformer_name="ds", 
     tf_frames_multichannel=None, diagonal_loading_param=1):
     n_fft_bins, n_mics = source_steering_vectors.shape
-    if beamformer_name.lower() == "delaysum":
+    if beamformer_name.lower() == "ds":
         tf_beamformer = compute_minimum_variance_tf_beamformers(
             source_steering_vectors, diagonal_loading_param=diagonal_loading_param)
     elif beamformer_name.lower() in ["mvdr", "mpdr"]:
