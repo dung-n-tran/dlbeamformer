@@ -182,7 +182,8 @@ class DLBeamformer(object):
     
     def _compute_weights(self, training_data, desired_null_width, 
             null_constraint_threshold, eigenvalue_percentage_threshold=0.99, 
-            batch_size=1, n_train_batches_each_config=1):
+            batch_size=1, n_train_batches_each_config=1, random_seed=0):
+        np.random.seed(random_seed)
         n_configurations = len(training_data)
         n_train_samples_each_config, n_fft_bins, n_mics, _ = training_data[0][0].shape
         n_sources = len(self.source_steering_vectors)
@@ -190,11 +191,16 @@ class DLBeamformer(object):
         if self.n_dict_atoms == None:
                 self.n_dict_atoms = n_configurations
         # Initialization        
-        dictionary = np.random.randn(n_sources, n_fft_bins, n_mics, self.n_dict_atoms) + \
-                    1j*np.random.randn(n_sources, n_fft_bins, n_mics, self.n_dict_atoms)
-        coefficients = np.zeros((n_sources, n_fft_bins, self.n_dict_atoms, 
-                                 n_configurations*n_train_batches_each_config), 
-                                 dtype=np.complex64)
+#         dictionary = np.random.randn(n_sources, n_fft_bins, n_mics, self.n_dict_atoms) + \
+#                     1j*np.random.randn(n_sources, n_fft_bins, n_mics, self.n_dict_atoms)
+#         coefficients = np.zeros((n_sources, n_fft_bins, self.n_dict_atoms, 
+#                                  n_configurations*n_train_batches_each_config), 
+#                                  dtype=np.complex64)
+        coefficients = np.random.randn(n_sources, n_fft_bins, self.n_dict_atoms,
+                                       n_configurations*n_train_batches_each_config)\
+                       + 1j*np.random.randn(n_sources, n_fft_bins, self.n_dict_atoms,
+                                       n_configurations*n_train_batches_each_config)
+        dictionary = np.zeros((n_sources, n_fft_bins, n_mics, self.n_dict_atoms), dtype=np.complex64)
         
         # Compute desired weights
         desired_weights = np.zeros((n_sources, n_fft_bins, n_mics,
@@ -226,31 +232,37 @@ class DLBeamformer(object):
                             null_constraint_threshold, 
                             eigenvalue_percentage_threshold=0.99, diagonal_loading_param=self.diagonal_loading_param)
                     desired_weights[i_source, :, :, i_configuration*n_train_batches_each_config + i_batch] = w
-                
+        n_desired_weights = desired_weights.shape[3]
+        
         # Training loop
         for i_source in range(n_sources):
             for i_train_iteration in tqdm(range(self.n_train_max_iterations), desc="Training iteration"):
                 # Each config
                 i_iteration_train_loss = 0
                 
-                # Update sparse coefficients given the dictionary
-                for i_fft_bin in range(n_fft_bins):
-                    for i_sample in range(desired_weights.shape[3]):
-                        coefficients[i_source, i_fft_bin, :, i_sample] = omp(
-                                    dictionary[i_source][i_fft_bin], 
-                                    desired_weights[i_source, i_fft_bin, :, i_sample], 
-                                    nonneg=False, ncoef=self.n_nonzero_coefficients, 
-                                    tol=self.train_error_tolerance, verbose=False
-                                ).coef
                 # Update dictionary given the sparse coeficients                    
                 for i_fft_bin in range(n_fft_bins):    
                     ### Update dictionary
                     dictionary[i_source][i_fft_bin] = desired_weights[i_source][i_fft_bin].dot(
                         np.linalg.pinv(coefficients[i_source][i_fft_bin])
                     )
+                    
+                # Update sparse coefficients given the dictionary
                 for i_fft_bin in range(n_fft_bins):
-                    i_iteration_train_loss += 0.5*np.linalg.norm(dictionary[i_source][i_fft_bin].dot(coefficients[i_source][i_fft_bin]) - \
-                        desired_weights[i_source][i_fft_bin])**2
+                    for i_sample in range(n_desired_weights):
+                        coefficients[i_source, i_fft_bin, :, i_sample] = omp(
+                                    dictionary[i_source][i_fft_bin], 
+                                    desired_weights[i_source, i_fft_bin, :, i_sample], 
+                                    nonneg=False, ncoef=self.n_nonzero_coefficients, 
+                                    tol=self.train_error_tolerance, verbose=True
+                                ).coef                
+                for i_fft_bin in range(n_fft_bins):
+                    i_iteration_train_loss += 0.5 * (1./n_desired_weights) \
+                        * np.linalg.norm(
+                            dictionary[i_source][i_fft_bin].dot(
+                                coefficients[i_source][i_fft_bin]) - \
+                            desired_weights[i_source][i_fft_bin]
+                            )**2
                 i_iteration_train_loss = i_iteration_train_loss / n_fft_bins
                 print("\t\tTrain loss at current iteration {:.9f}".format(i_iteration_train_loss))
                 self.training_loss.append(i_iteration_train_loss)
@@ -298,14 +310,14 @@ class DLBeamformer(object):
     
     def fit(self, training_data, desired_null_width, 
             null_constraint_threshold, eigenvalue_percentage_threshold=0.99, 
-            batch_size=1, n_train_batches_each_config=1):
+            batch_size=1, n_train_batches_each_config=1, random_seed=0):
         """
         Parameters
         ----------
         """
         D = self._compute_weights(training_data, desired_null_width, 
             null_constraint_threshold, eigenvalue_percentage_threshold, 
-            batch_size, n_train_batches_each_config)
+            batch_size, n_train_batches_each_config, random_seed)
         self.weights_ = D
         return self
 
