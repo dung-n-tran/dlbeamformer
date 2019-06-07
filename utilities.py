@@ -7,7 +7,12 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from IPython.display import Audio, display
 from scipy.signal import stft, istft
+import soundfile as sf
 
+def write_audio_file(signal, sampling_frequency, filename):
+    signal = np.int16(signal/np.max(np.abs(signal)) * 32767)
+    sf.write(filename, signal, sampling_frequency)
+    
 def load_data(datapath):
     train_data_folder = join(datapath, 'train')
     test_data_folder = join(datapath, 'test')
@@ -60,6 +65,7 @@ def parse_parameters():
 
 def config_figures():
     import matplotlib as plt
+    plt.rcParams['axes.edgecolor']: "gray"
     plt.rcParams['axes.spines.top'] = False
     plt.rcParams['axes.spines.right'] = False
     plt.rcParams['axes.grid'] = True
@@ -93,6 +99,10 @@ def visualize_tf(tf_frames, sampling_frequency, figsize=(9, 6), cmap="coolwarm")
     return ax
 
 def play_tf_frames(tf_frames, sampling_frequency, stft_params):
+    t, ss = convert_tf_frames_to_signal(tf_frames, sampling_frequency, stft_params)
+    display(Audio(ss, rate=sampling_frequency, autoplay=True))
+
+def convert_tf_frames_to_signal(tf_frames, sampling_frequency, stft_params):
     stft_window = stft_params["window"]
     n_samples_per_frame = stft_params["n_samples_per_frame"]
     hop_size = stft_params["hop_size"]
@@ -100,4 +110,4 @@ def play_tf_frames(tf_frames, sampling_frequency, stft_params):
         window=stft_window, nperseg=n_samples_per_frame, 
         noverlap=n_samples_per_frame-hop_size,
         nfft=n_samples_per_frame, boundary=True)
-    display(Audio(ss, rate=sampling_frequency, autoplay=True))
+    return t, ss
