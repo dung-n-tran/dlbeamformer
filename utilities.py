@@ -59,17 +59,19 @@ def parse_parameters():
     return sampling_frequency, stft_params, sound_speed
 
 def config_figures():
-    import matplotlib as plt
-    plt.rcParams['axes.spines.top'] = False
-    plt.rcParams['axes.spines.right'] = False
-    plt.rcParams['axes.grid'] = True
-    plt.rcParams['grid.color'] = 'gray'
-    plt.rcParams['grid.linewidth'] = 0.25
-    plt.rcParams['grid.alpha'] = 0.2
-    plt.style.use('seaborn-talk')
+    import matplotlib as mpl
+    mpl.rcParams['axes.spines.top'] = False
+    mpl.rcParams['axes.spines.right'] = False
+    mpl.rcParams['axes.grid'] = True
+    mpl.rcParams['grid.color'] = 'gray'
+    mpl.rcParams['grid.linewidth'] = 0.1
+    mpl.rcParams['grid.alpha'] = 0.1
+    mpl.rcParams['xtick.color'] = 'gray'; mpl.rcParams['ytick.color'] = 'gray'
+    mpl.rcParams['axes.labelcolor'] = 'gray';
+    mpl.style.use('seaborn-poster')
     
     from seaborn import set_palette
-    palette = ["#3498db", "#9b59b6", "#95a5a6", "#e74c3c", "#34495e", "#2ecc71"]
+    palette = ["#3b9db4", "#9b59b6", "#95a5a6", "#2ecc71", "#34495e", "#3498db", "#e74c3c"]
     set_palette(palette)
     
     cmap = "RdBu_r"

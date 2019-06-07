@@ -7,6 +7,10 @@ from scipy.signal import stft, istft
 from tqdm import tqdm
 import pickle
 
+def write_audio_file(signal, sampling_frequency, filename):
+    signal = np.int16(signal/np.max(np.abs(signal)) * 32767)
+    sf.write(filename, signal, sampling_frequency)
+    
 # Steering vectors
 def compute_steering_vectors_single_frequency(array_geometry, frequency, elevation_grid, azimuth_grid):
     # wave number
@@ -49,7 +53,7 @@ def compute_tf_beampattern(beamformers, scanning_steering_vectors):
     return beampattern
 
 def visualize_beampattern_1d(beampattern, scanning_azimuth_grid, frequency_bins, 
-    signal_max_frequency, source_azimuths=None, title=None, figsize=(9, 6)):
+    signal_max_frequency, source_azimuths=None, interference_azimuths=None, title=None, figsize=(9, 6)):
     n_fft_bins = beampattern.shape[0]
     fig = plt.figure(figsize=(9, 6)); ax = fig.add_subplot(111)
     for i_bin in frequency_bins:
@@ -58,15 +62,20 @@ def visualize_beampattern_1d(beampattern, scanning_azimuth_grid, frequency_bins,
     if source_azimuths is not None:
         for i_source in range(len(source_azimuths)):
             ax.axvline(x=source_azimuths[i_source], linestyle="--", label="Source angle");
+    if interference_azimuths is not None:
+        for i_interference in range(len(interference_azimuths)):
+            ax.axvline(x=interference_azimuths[i_source], linestyle="--", label="Interference angle", color="gray");
     ax.set_xlim(scanning_azimuth_grid[0], scanning_azimuth_grid[-1]);
     ax.set_xlabel(r"Azimuth [degree]"); ax.set_ylabel("Beam pattern [dB]");
-    ax.legend();
+    legend = ax.legend();
+    for text in legend.get_texts():
+        text.set_color("gray")
     if title is not None:
         ax.set_title(title)
     return fig, ax
 
 def visualize_beampattern_1d_average(beampattern, scanning_azimuth_grid, frequency_range=None, 
-    source_azimuths=None, title=None, figsize=(9, 6)):
+    source_azimuths=None, interference_azimuths=None, title=None, figsize=(9, 6)):
     if frequency_range is None:
         ds_ave_beampattern = np.mean(np.abs(beampattern), axis=0)
     else:
@@ -79,11 +88,16 @@ def visualize_beampattern_1d_average(beampattern, scanning_azimuth_grid, frequen
     if source_azimuths is not None:
         for i_source in range(len(source_azimuths)):
             ax.axvline(x=source_azimuths[i_source], linestyle="--", label="Source angle");
+    if interference_azimuths is not None:
+        for i_interference in range(len(interference_azimuths)):
+            ax.axvline(x=interference_azimuths[i_source], linestyle="--", label="Interference angle", color="gray");
+    legend = ax.legend();
+    for text in legend.get_texts():
+        text.set_color("gray")
     ax.set_xlim(scanning_azimuth_grid[0], scanning_azimuth_grid[-1]); ax.set_ylim(-60, 1)
     ax.set_xlabel(r"Azimuth [degree]"); ax.set_ylabel("Beam pattern [dB]");
     if title is not None:
-        ax.set_title(title)
-    ax.legend();
+        ax.set_title(title)    
     return ax
 
 def visualize_beampattern_2d(beampattern, scanning_azimuth_grid, signal_max_frequency, title=None, figsize=(9, 6)):

@@ -254,7 +254,7 @@ class DLBeamformer(object):
                                     dictionary[i_source][i_fft_bin], 
                                     desired_weights[i_source, i_fft_bin, :, i_sample], 
                                     nonneg=False, ncoef=self.n_nonzero_coefficients, 
-                                    tol=self.train_error_tolerance, verbose=True
+                                    tol=self.train_error_tolerance, verbose=False
                                 ).coef                
                 for i_fft_bin in range(n_fft_bins):
                     i_iteration_train_loss += 0.5 * (1./n_desired_weights) \
